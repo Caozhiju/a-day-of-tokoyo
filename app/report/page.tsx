@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -12,7 +13,24 @@ import CivilizationSummary from '@/components/CivilizationSummary';
 import LivingGuide from '@/components/LivingGuide';
 import { computeRecommendation } from '@/data/recommendation';
 
-/* ─────────── 数据构建 ─────────── */
+/* ─────────── 加载占位 ─────────── */
+function LoadingFallback() {
+  return (
+    <main className="relative min-h-screen w-full flex items-center justify-center bg-rice-paper">
+      <div className="text-4xl font-chinese font-bold text-scroll-dark animate-pulse">加载中...</div>
+    </main>
+  );
+}
+
+/* ── 导出入口（Suspense 边界） ── */
+export default function ReportPageWrapper() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ReportPage />
+    </Suspense>
+  );
+}
+
 function buildReportData(role: string) {
   const activities = studentActivities;
   const locationSet = new Set<string>();
@@ -77,7 +95,7 @@ function SundialSVG({ className }: { className?: string }) {
 }
 
 /* ═══════════════════════════════════════ */
-export default function ReportPage() {
+function ReportPage() {
   const searchParams = useSearchParams();
   const [role, setRole] = useState<string>('');
   const [mounted, setMounted] = useState(false);

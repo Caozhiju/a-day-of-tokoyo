@@ -97,11 +97,11 @@ export default function CultureGeneCard({ gene, matchedActivities, matchScore, d
 
               <div className="flex-1 flex items-center justify-center py-3">
                 <div className="relative">
-                  <span className="absolute -top-4 -left-3 text-5xl text-gold-accent/10 font-serif leading-none">"</span>
+                  <span className="absolute -top-4 -left-3 text-5xl text-gold-accent/10 font-serif leading-none">&ldquo;</span>
                   <p className="text-base sm:text-lg font-chinese text-scroll-dark/70 leading-relaxed text-center italic px-6">
                     {gene.heritage}
                   </p>
-                  <span className="absolute -bottom-5 -right-3 text-5xl text-gold-accent/10 font-serif leading-none">"</span>
+                  <span className="absolute -bottom-5 -right-3 text-5xl text-gold-accent/10 font-serif leading-none">&rdquo;</span>
                 </div>
               </div>
 

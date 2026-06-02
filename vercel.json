@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "functions": {
+    "app/api/retrieve/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "app/api/generate-day/route.ts": {
+      "memory": 512,
+      "maxDuration": 30
+    },
+    "app/api/generate-summary/route.ts": {
+      "memory": 512,
+      "maxDuration": 30
+    }
+  }
+}

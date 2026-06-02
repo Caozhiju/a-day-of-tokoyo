@@ -22,7 +22,7 @@ export interface RetrievedChunk {
 
 /* ─────────── 余弦相似度 ─────────── */
 
-function cosineSimilarity(a: number[], b: number[]): number {
+function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
@@ -36,7 +36,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
 /* ─────────── 服务端数据加载 ─────────── */
 
 interface CacheData {
-  embeddings: { id: string; vector: number[] }[];
+  ids: string[];
+  vectors: Float32Array[];
   knowledge: Map<string, RetrievedChunk['knowledge']>;
   chunks: Map<string, string>;
 }
@@ -48,10 +49,35 @@ async function loadCache(): Promise<CacheData> {
 
   const fs = await import('fs');
   const path = await import('path');
-  const root = path.resolve(process.cwd());
+  const root = process.cwd();
 
-  const [embRaw, knowRaw, chunkRaw] = await Promise.all([
-    fs.promises.readFile(path.join(root, 'tokyo_embeddings.json'), 'utf-8').then(JSON.parse),
+  // 读取二进制 embeddings（约 4.6MB 替代原来的 30MB JSON）
+  const binBuf = await fs.promises.readFile(path.join(root, 'tokyo_embeddings.bin'));
+  const VEC_DIM = 1024;
+  const VEC_BYTES = VEC_DIM * 4; // Float32 = 4 字节
+  let offset = 0;
+  const count = binBuf.readUInt32LE(offset);
+  offset += 4;
+
+  const ids: string[] = [];
+  const vectors: Float32Array[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const idLen = binBuf.readUInt32LE(offset);
+    offset += 4;
+    const id = binBuf.toString('utf-8', offset, offset + idLen);
+    offset += idLen;
+    const vec = new Float32Array(VEC_DIM);
+    for (let d = 0; d < VEC_DIM; d++) {
+      vec[d] = binBuf.readFloatLE(offset + d * 4);
+    }
+    offset += VEC_BYTES;
+    ids.push(id);
+    vectors.push(vec);
+  }
+
+  // 读取知识库和文本片段
+  const [knowRaw, chunkRaw] = await Promise.all([
     fs.promises.readFile(path.join(root, 'tokyo_knowledge.json'), 'utf-8').then(JSON.parse),
     fs.promises.readFile(path.join(root, 'tokyo_chunks.json'), 'utf-8').then(JSON.parse),
   ]);
@@ -73,7 +99,7 @@ async function loadCache(): Promise<CacheData> {
     chunks.set(item.id, item.content || '');
   });
 
-  cache = { embeddings: embRaw, knowledge, chunks };
+  cache = { ids, vectors, knowledge, chunks };
   return cache;
 }
 
@@ -121,7 +147,7 @@ export async function retrieve(
   input: RetrieveInput,
   topK: number = 3,
 ): Promise<RetrievedChunk[]> {
-  const { embeddings, knowledge, chunks } = await loadCache();
+  const { ids, vectors, knowledge, chunks } = await loadCache();
 
   // 组装查询文本
   const queryText = [
@@ -132,11 +158,12 @@ export async function retrieve(
   ].join('。');
 
   const queryVec = await embedQuery(queryText);
+  const queryArr = new Float32Array(queryVec);
 
   // 计算余弦相似度
-  const scored = embeddings.map((emb) => ({
-    id: emb.id,
-    score: cosineSimilarity(queryVec, emb.vector),
+  const scored = vectors.map((vec, i) => ({
+    id: ids[i],
+    score: cosineSimilarity(queryArr, vec),
   }));
 
   // 取 topK

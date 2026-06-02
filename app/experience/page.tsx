@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -58,7 +59,25 @@ interface GenerateDayResponse {
   activities: TimelineActivity[];
 }
 
-export default function ExperiencePage() {
+/* ── 加载占位 ── */
+function LoadingFallback() {
+  return (
+    <main className="relative min-h-screen w-full flex items-center justify-center bg-rice-paper">
+      <div className="text-4xl font-chinese font-bold text-scroll-dark animate-pulse">加载中...</div>
+    </main>
+  );
+}
+
+/* ── 导出入口（含 Suspense 边界，兼容 Vercel 静态生成） ── */
+export default function ExperiencePageWrapper() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ExperiencePage />
+    </Suspense>
+  );
+}
+
+function ExperiencePage() {
   const searchParams = useSearchParams();
   const [role, setRole] = useState<string>('');
   const [mounted, setMounted] = useState(false);

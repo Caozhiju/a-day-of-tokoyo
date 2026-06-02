@@ -1,13 +1,31 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { LOCATIONS, CATEGORY_STYLE, type LocationData } from '@/data/locations';
 import { studentActivities } from '@/data/activities';
 import { generateRoute, buildRoutePath, type RoutePoint } from '@/data/route-generator';
 
-export default function MapPage() {
+/* ── 加载占位 ── */
+function LoadingFallback() {
+  return (
+    <main className="relative min-h-screen w-full flex items-center justify-center bg-rice-paper">
+      <div className="text-4xl font-chinese font-bold text-scroll-dark animate-pulse">加载中...</div>
+    </main>
+  );
+}
+
+/* ── 导出入口（Suspense 边界） ── */
+export default function MapPageWrapper() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <MapPage />
+    </Suspense>
+  );
+}
+
+function MapPage() {
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [selected, setSelected] = useState<LocationData | null>(null);
