@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { studentActivities, type ActivityData } from '@/data/activities';
+import { getActivitiesByRole, type ActivityData } from '@/data/activities';
 import { matchGenesFromActivities } from '@/data/culture-genes';
 import { computeHeritageIndex } from '@/data/heritage-index';
 import CultureGeneCard from '@/components/CultureGeneCard';
@@ -142,9 +142,9 @@ function ReportPage() {
     }
   }, [searchParams]);
 
-  // 优先使用 RAG 生成的真实活动，回退到静态数据
+  // 优先使用 RAG 生成的真实活动，回退到当前角色的静态数据
   const activities: ActivityData[] = useMemo(() => {
-    if (!role) return studentActivities;
+    if (!role) return getActivitiesByRole('北宋书生');
     if (ragData && ragData.activities.length > 0) {
       return ragData.activities.map((a) => ({
         time: a.time,
@@ -157,7 +157,7 @@ function ReportPage() {
         evidence: a.sourceChunkIds ?? [],
       }));
     }
-    return studentActivities;
+    return getActivitiesByRole(role);
   }, [ragData, role]);
 
   const data = useMemo(() => buildReportData(role || '体验者', activities), [role, activities]);
@@ -304,7 +304,7 @@ function ReportPage() {
         </div>
 
         <div className="divide-y divide-border-warm/50">
-          {studentActivities.map((act, i) => {
+          {activities.map((act, i) => {
             const icon = SHICHEN_ICON[act.time.charAt(0)] ?? SHICHEN_ICON.default;
             return (
               <div
@@ -436,7 +436,7 @@ function ReportPage() {
           行7：文明传承总结
       ════════════════════════════════════════ */}
       <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.7s both' : 'none' }}>
-        <CivilizationSummary activities={studentActivities} mounted={mounted} />
+        <CivilizationSummary activities={activities} mounted={mounted} />
       </div>
     </div>
   );
