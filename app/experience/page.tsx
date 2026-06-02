@@ -113,6 +113,7 @@ function ExperiencePage() {
   const [generatedTitle, setGeneratedTitle] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [ragMeta, setRagMeta] = useState<GenerateDayResponse['meta'] | null>(null);
+  const [citedChunkCount, setCitedChunkCount] = useState(0);
   useEffect(() => {
     setMounted(true);
     const roleParam = searchParams.get('role');
@@ -147,6 +148,7 @@ function ExperiencePage() {
       setGeneratedActivities(data.activities);
       setGeneratedTitle(data.title);
       setRagMeta(data.meta ?? null);
+      setCitedChunkCount(data.sources?.length ?? 0);
 
       // 同步到 sessionStorage，供报告页使用
       try {
