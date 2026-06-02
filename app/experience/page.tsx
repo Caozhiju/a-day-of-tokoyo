@@ -57,6 +57,31 @@ interface GenerateDayResponse {
   role: string;
   title: string;
   activities: TimelineActivity[];
+  sources: Array<{
+    activityIndex: number;
+    time: string;
+    chunkId: string;
+    excerpt: string;
+    relevance: number;
+  }>;
+  retrievedChunks: Array<{
+    id: string;
+    content: string;
+    score: number;
+    knowledge: {
+      place: string[];
+      character: string[];
+      activity: string[];
+      food: string[];
+      festival: string[];
+      commerce: string[];
+    };
+  }>;
+  meta?: {
+    retrievalSuccess: number;
+    retrievalTotal: number;
+    uniqueChunks: number;
+  };
 }
 
 /* ── 加载占位 ── */
@@ -87,7 +112,9 @@ function ExperiencePage() {
   const [generatedActivities, setGeneratedActivities] = useState<TimelineActivity[] | null>(null);
   const [generatedTitle, setGeneratedTitle] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
-
+  const [ragMeta, setRagMeta] = useState<GenerateDayResponse['meta'] | null>(null);
+  const [ragChunkCount, setRagChunkCount] = useState(0);
+  const [citedChunkCount, setCitedChunkCount] = useState(0);
   useEffect(() => {
     setMounted(true);
     const roleParam = searchParams.get('role');
@@ -121,6 +148,26 @@ function ExperiencePage() {
       const data: GenerateDayResponse = await res.json();
       setGeneratedActivities(data.activities);
       setGeneratedTitle(data.title);
+      setRagMeta(data.meta ?? null);
+      setRagChunkCount(data.retrievedChunks?.length ?? 0);
+      setCitedChunkCount(data.sources?.length ?? 0);
+
+      // 同步到 sessionStorage，供报告页使用
+      try {
+        sessionStorage.setItem(
+          `menghua:${role}`,
+          JSON.stringify({
+            role,
+            title: data.title,
+            activities: data.activities,
+            sources: data.sources,
+            retrievedChunks: data.retrievedChunks,
+            generatedAt: Date.now(),
+          }),
+        );
+      } catch {
+        /* sessionStorage 不可用时静默忽略 */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '网络异常，请稍后重试';
       setGenerateError(msg);
@@ -234,6 +281,27 @@ function ExperiencePage() {
                   一位书生的东京一日
                 </h2>
               ) : null}
+
+              {/* RAG 溯源徽章：仅在 AI 生成后显示 */}
+              {generatedTitle && ragMeta && (
+                <div
+                  className="inline-flex items-center gap-2 mt-4 px-3 py-1.5 border border-gold-accent/30 bg-gold-accent/5 rounded-sm animate-fade-in"
+                  style={{ animation: 'fade-in 0.6s ease-out 0.3s both' }}
+                >
+                  <span className="text-sm">📜</span>
+                  <span className="text-[11px] sm:text-xs font-chinese text-gold-accent/90 tracking-wider">
+                    RAG 知识库溯源
+                  </span>
+                  <span className="text-[10px] sm:text-xs font-chinese text-ink-light/60">
+                    ·
+                  </span>
+                  <span className="text-[11px] sm:text-xs font-chinese text-scroll-dark/80">
+                    检索 {ragMeta.retrievalSuccess}/{ragMeta.retrievalTotal} 时辰
+                    · 命中 {ragMeta.uniqueChunks} 个原文片段
+                    · 引用 {citedChunkCount} 处
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-center items-center mt-6 space-x-4">

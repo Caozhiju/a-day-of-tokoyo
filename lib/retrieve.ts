@@ -180,3 +180,53 @@ export async function retrieve(
     },
   }));
 }
+
+/* ─────────── RAG 专用：返回完整原文 ─────────── */
+
+/** RAG 检索返回的完整片段（content 不过截断、便于喂给 LLM） */
+export interface RetrievedChunkFull {
+  id: string;
+  /** 完整原文（无截断） */
+  content: string;
+  score: number;
+  knowledge: RetrievedChunk['knowledge'];
+}
+
+/**
+ * RAG 检索：与 retrieve() 相同逻辑，但返回完整原文不截断
+ * 用于把检索结果直接拼入 Prompt
+ */
+export async function retrieveForRAG(
+  input: RetrieveInput,
+  topK: number = 3,
+): Promise<RetrievedChunkFull[]> {
+  const { ids, vectors, knowledge, chunks } = await loadCache();
+
+  const queryText = [
+    `身份：${input.role}`,
+    `地点：${input.location}`,
+    `时间：${input.time}`,
+    `在北宋东京城中，${input.role}在${input.time}来到${input.location}。`,
+  ].join('。');
+
+  const queryVec = await embedQuery(queryText);
+  const queryArr = new Float32Array(queryVec);
+
+  const scored = vectors.map((vec, i) => ({
+    id: ids[i],
+    score: cosineSimilarity(queryArr, vec),
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, topK);
+
+  return top.map((item) => ({
+    id: item.id,
+    content: chunks.get(item.id) || '',
+    score: Math.round(item.score * 10000) / 10000,
+    knowledge: knowledge.get(item.id) || {
+      place: [], character: [], activity: [],
+      food: [], festival: [], commerce: [],
+    },
+  }));
+}

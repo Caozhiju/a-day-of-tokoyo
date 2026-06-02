@@ -2,9 +2,9 @@
 
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { studentActivities } from '@/data/activities';
+import { studentActivities, type ActivityData } from '@/data/activities';
 import { matchGenesFromActivities } from '@/data/culture-genes';
 import { computeHeritageIndex } from '@/data/heritage-index';
 import CultureGeneCard from '@/components/CultureGeneCard';
@@ -12,6 +12,38 @@ import HeritageIndex from '@/components/HeritageIndex';
 import CivilizationSummary from '@/components/CivilizationSummary';
 import LivingGuide from '@/components/LivingGuide';
 import { computeRecommendation } from '@/data/recommendation';
+
+/* ─────────── sessionStorage 中的 RAG 生成结果 ─────────── */
+interface StoredRAGData {
+  role: string;
+  title: string;
+  activities: ActivityData[];
+  sources: Array<{
+    activityIndex: number;
+    time: string;
+    chunkId: string;
+    excerpt: string;
+    relevance: number;
+  }>;
+  retrievedChunks: Array<{
+    id: string;
+    content: string;
+    score: number;
+    knowledge: any;
+  }>;
+  generatedAt: number;
+}
+
+function readRAGData(role: string): StoredRAGData | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(`menghua:${role}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 /* ─────────── 加载占位 ─────────── */
 function LoadingFallback() {
@@ -31,8 +63,7 @@ export default function ReportPageWrapper() {
   );
 }
 
-function buildReportData(role: string) {
-  const activities = studentActivities;
+function buildReportData(role: string, activities: ActivityData[]) {
   const locationSet = new Set<string>();
   activities.forEach((a) => {
     const locs = extractLocations(a.description);
@@ -99,12 +130,40 @@ function ReportPage() {
   const searchParams = useSearchParams();
   const [role, setRole] = useState<string>('');
   const [mounted, setMounted] = useState(false);
+  const [ragData, setRagData] = useState<StoredRAGData | null>(null);
 
   useEffect(() => {
     setMounted(true);
     const roleParam = searchParams.get('role');
-    if (roleParam) setRole(decodeURIComponent(roleParam));
+    if (roleParam) {
+      const decoded = decodeURIComponent(roleParam);
+      setRole(decoded);
+      setRagData(readRAGData(decoded));
+    }
   }, [searchParams]);
+
+  // 优先使用 RAG 生成的真实活动，回退到静态数据
+  const activities: ActivityData[] = useMemo(() => {
+    if (!role) return studentActivities;
+    if (ragData && ragData.activities.length > 0) {
+      return ragData.activities.map((a) => ({
+        time: a.time,
+        title: a.title,
+        description: a.description,
+        source: a.source,
+        modern: a.modern,
+        originalText: a.originalText ?? '',
+        chapter: a.chapter ?? a.source ?? '',
+        evidence: a.sourceChunkIds ?? [],
+      }));
+    }
+    return studentActivities;
+  }, [ragData, role]);
+
+  const data = useMemo(() => buildReportData(role || '体验者', activities), [role, activities]);
+  const geneResults = useMemo(() => matchGenesFromActivities(activities), [activities]);
+  const heritageReport = useMemo(() => computeHeritageIndex(activities), [activities]);
+  const livingRecommendation = useMemo(() => computeRecommendation(activities), [activities]);
 
   if (!mounted || !role) {
     return (
@@ -114,11 +173,8 @@ function ReportPage() {
     );
   }
 
-  const data = buildReportData(role);
-  const geneResults = matchGenesFromActivities(studentActivities);
-  const heritageReport = computeHeritageIndex(studentActivities);
-  const livingRecommendation = computeRecommendation(studentActivities);
   const hasData = data.totalActivities > 0;
+  const isRAGSourced = ragData !== null;
 
   const mainContent = (
     <div className="max-w-6xl mx-auto space-y-10 sm:space-y-16">
@@ -447,6 +503,22 @@ function ReportPage() {
               >
                 东京一日 · 尽录于此
               </p>
+
+              {isRAGSourced && (
+                <div
+                  className="inline-flex items-center gap-2 mt-5 px-3 py-1.5 border border-gold-accent/30 bg-gold-accent/5 rounded-sm"
+                  style={{ animation: 'fade-in 0.6s ease-out 0.6s both' }}
+                >
+                  <span className="text-sm">📜</span>
+                  <span className="text-[11px] sm:text-xs font-chinese text-gold-accent/90 tracking-wider">
+                    RAG 知识库生成
+                  </span>
+                  <span className="text-[10px] sm:text-xs font-chinese text-ink-light/60">·</span>
+                  <span className="text-[11px] sm:text-xs font-chinese text-scroll-dark/80">
+                    检索 {ragData?.retrievedChunks.length ?? 0} 个原文片段 · 引用 {(ragData?.sources.length ?? 0)} 处
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <div className="max-w-4xl mx-auto px-6 sm:px-8">
@@ -516,7 +588,10 @@ function ReportPage() {
           <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 py-10">
             <div className="text-center">
               <p className="text-base font-chinese text-ink-light">
-                梦华一日 © 2024 · 此报告由 AI 根据《东京梦华录》生成
+                梦华一日 © 2024 ·
+                {isRAGSourced
+                  ? '此报告基于《东京梦华录》知识库 RAG 检索增强生成 · 所有活动均引用原文片段'
+                  : '此报告由 AI 根据《东京梦华录》生成'}
               </p>
             </div>
           </div>

@@ -4,7 +4,13 @@
    - 方便后续迭代、国际化、A/B 测试
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─────────── 生成一日活动 ─────────── */
+/* ═══════════════════════════════════════════════════════════════
+   Prompts — 所有与 AI 交互的提示词模板集中管理
+   - 每个 prompt 独立导出一个函数或字符串常量
+   - 方便后续迭代、国际化、A/B 测试
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─────────── 生成一日活动（RAG 模式） ─────────── */
 
 /** 当《东京梦华录》未记载具体内容时的占位标记 */
 export const PLACEHOLDER_NO_RECORD = '东京梦华录未明确记载';
@@ -12,37 +18,103 @@ export const PLACEHOLDER_NO_RECORD = '东京梦华录未明确记载';
 /** 当无现代对应时的占位标记 */
 export const PLACEHOLDER_MODERN_REFERENCE = '该活动在当代生活中已无直接对应的习惯。';
 
-/** system prompt：角色 + 格式约束 */
-export const GENERATE_DAY_SYSTEM = `你是《东京梦华录》考据专家。你的任务是根据《东京梦华录》原文记载，还原特定身份在北宋东京城中一天的活动。
+/**
+ * RAG 模式 system prompt —— 严格要求 LLM 仅基于检索到的原文片段生成
+ *
+ * 关键约束：
+ *  1. 不得使用片段外的任何《东京梦华录》知识
+ *  2. 必须引用具体片段 ID
+ *  3. 无依据时使用占位标记
+ */
+export const GENERATE_DAY_SYSTEM = `你是《东京梦华录》考据专家兼宋代生活模拟器。
 
-⚠️ 核心约束——必须遵守，违者无效：
+## 任务
+根据用户提供的身份信息与【检索到的《东京梦华录》原文片段】，严格按照下方约束生成该身份在北宋东京城一天的活动（8 个时辰）。
 
-1. 只依据《东京梦华录》原文记载生成内容。原文未提及的，一律不得虚构。
-2. 如果原文没有记载对应身份在对应时辰的具体活动，在 description 字段填入 "${PLACEHOLDER_NO_RECORD}"，title 按合理推断填写，source 填入 "无明确出处"，modern 字段仍按理解填写合理的现代对照，但仍保留该时辰占位。
-3. 时辰按以下固定顺序输出 8 个，不可增减、不可调换：
-   卯时 → 辰时 → 巳时 → 午时 → 未时 → 申时 → 酉时 → 戌时
-4. 有记载的条目，description 使用第二人称"你"的叙述视角，80-120 字，充分调动五感——视觉、听觉、嗅觉，还原街巷、饮食、器物等细节。
-5. title 须为四字雅称（如 "晨读书卷"、"茶肆论学"）。
-6. source 填入 "东京梦华录"。缺乏依据时 source 填入 "无明确出处"。
-7. 每个条目必须包含 modern 字段——该活动在今日生活中的映射，用一句话打通古今（如 "今日咖啡馆里的头脑风暴——换了个杯具，不变的是观点碰撞的火花"）。
-8. 不得杜撰书中不存在的地名、风俗或事件。
-9. 只能输出纯 JSON，不要输出任何 Markdown 标记、代码块包裹或额外说明文字。
+## ⚠️ 核心约束（违者视为生成失败）
 
-输出格式为纯 JSON 数组，严格按顺序包含 8 个元素，每个元素包含：
-- time: 时辰（如 "卯时"）
-- title: 四字雅称（如 "晨读书卷"）
-- description: 第二人称叙述，80-120 字的场景描绘，或 "${PLACEHOLDER_NO_RECORD}"
-- source: "东京梦华录"，或无依据时填 "无明确出处"
-- modern: 该活动在今日生活中的映射（一句话）`;
+### 1. 严格依据原文
+- 每个活动的内容**必须严格基于**下方【检索到的原文片段】中提供的信息
+- 不得杜撰片段中没有的地名、风俗、食物、器物
+- 不得使用片段之外的任何《东京梦华录》知识（即使你知道）
 
-/** 组装 user prompt */
+### 2. 引用具体片段
+- 每个活动**必须**在以下字段中标注引用：
+  - \`originalText\`: 引用片段中的具体句子（直接引文，用「」包裹）
+  - \`chapter\`: 所属章节，格式如 "《东京梦华录·卷二·州桥夜市》"
+  - \`sourceChunkIds\`: 实际引用的片段 ID 数组（格式如 ["chunk_023"]）
+- **仅可引用下方提供的片段 ID**，不得编造
+- 找不到任何依据时：sourceChunkIds 必须为 \`[]\`
+
+### 3. 无依据时的占位
+若某时辰在所有片段中都无相关信息：
+- \`description\` 填 "${PLACEHOLDER_NO_RECORD}"
+- \`source\` 填 "无明确出处"
+- \`sourceChunkIds\` 填 \`[]\`
+- \`originalText\` 与 \`chapter\` 省略
+- **仍需保留该时辰占位**
+- \`modern\` 字段按理解填写（不依赖原文）
+
+### 4. 格式约束
+- 时辰按以下固定顺序输出 8 个，**不可增减、不可调换**：
+  卯时 → 辰时 → 巳时 → 午时 → 未时 → 申时 → 酉时 → 戌时
+- \`title\` 须为四字雅称（如 "晨读书卷"、"茶肆论学"）
+- \`description\` 使用第二人称"你"的叙述视角，80-120 字，充分调动五感（视觉、听觉、嗅觉）
+- \`modern\` 必填：该活动在今日生活中的映射，一句话打通古今
+
+## 输出格式
+严格输出**纯 JSON 对象**，不要任何 Markdown 标记、代码块包裹或额外说明文字。
+
+{
+  "activities": [
+    {
+      "time": "卯时",
+      "title": "四字雅称",
+      "description": "第二人称场景描写，80-120 字",
+      "source": "《东京梦华录·卷X·XX》 或 '无明确出处'",
+      "modern": "现代映射一句话",
+      "originalText": "引用的原文（片段中的具体句子）",
+      "chapter": "《东京梦华录·卷X·XX》",
+      "sourceChunkIds": ["chunk_xxx"]
+    },
+    ...  // 严格按照 8 个时辰
+  ]
+}`;
+
+/* ─────────── RAG context 拼接 ─────────── */
+
+import type { RetrievedChunkFull } from '@/lib/retrieve';
+
+/**
+ * 把检索到的原文片段格式化为可注入 Prompt 的 context 文本
+ */
+export function buildRAGContext(chunks: RetrievedChunkFull[]): string {
+  if (chunks.length === 0) {
+    return '【未检索到任何相关原文片段】\n知识库中无相关内容，所有活动请使用占位标记。';
+  }
+
+  return chunks
+    .map((c, i) => {
+      const tags = Object.entries(c.knowledge)
+        .filter(([, v]) => Array.isArray(v) && v.length > 0)
+        .map(([k, v]) => `${k}: ${(v as string[]).join('、')}`)
+        .join(' | ');
+      return `【${c.id}】相关度 ${(c.score * 100).toFixed(1)}%
+原文：${c.content}${tags ? `\n标签：${tags}` : ''}`;
+    })
+    .join('\n\n');
+}
+
+/* ─────────── 组装 user prompt（RAG 模式） ─────────── */
+
 export function buildGenerateDayUserPrompt(params: {
   role: string;
   location: string;
   dynasty: string;
+  context: string;
   identityDescription?: string;
 }): string {
-  const { role, location, dynasty, identityDescription } = params;
+  const { role, location, dynasty, context, identityDescription } = params;
   const desc = identityDescription ? `身份描述：${identityDescription}` : '';
 
   return [
@@ -51,10 +123,47 @@ export function buildGenerateDayUserPrompt(params: {
     `朝代：${dynasty}`,
     desc,
     '',
-    `请生成该角色在${dynasty}${location}的一日活动安排。`,
+    '═══════════════════════════════════════',
+    '【检索到的原文片段】（请仅基于此生成，不得使用片段外知识）',
+    '═══════════════════════════════════════',
+    context,
+    '═══════════════════════════════════════',
+    '',
+    `请严格按照 system prompt 中的约束，基于以上检索到的《东京梦华录》原文片段，生成"${dynasty}${location}·${role}的一日"活动（共 8 个时辰，卯时→戌时）。每个活动必须引用具体的片段 ID（sourceChunkIds）。`,
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/* ─────────── RAG 返回类型 ─────────── */
+
+/** 单个活动的来源引用（活动 → 片段） */
+export interface RAGSource {
+  /** 关联到的活动索引（0-7） */
+  activityIndex: number;
+  /** 对应时辰 */
+  time: string;
+  /** 引用的原文片段 ID */
+  chunkId: string;
+  /** 原文片段摘录（前 100 字） */
+  excerpt: string;
+  /** 相似度分数 0-1 */
+  relevance: number;
+}
+
+/** 检索到的原文片段（去重、排序后） */
+export interface RAGChunk {
+  id: string;
+  content: string;
+  score: number;
+  knowledge: {
+    place: string[];
+    character: string[];
+    activity: string[];
+    food: string[];
+    festival: string[];
+    commerce: string[];
+  };
 }
 
 /* ─────────── （预留）生成更多交互内容 ─────────── */

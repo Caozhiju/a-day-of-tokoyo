@@ -17,6 +17,8 @@ export interface TimelineActivity {
   chapter?: string;
   /** 证据片段 —— AI 生成时依据的原文关键词或文句 */
   evidence?: string[];
+  /** RAG 引用的原文片段 ID 列表（来自 /api/generate-day） */
+  sourceChunkIds?: string[];
 }
 
 interface TimelineProps {
