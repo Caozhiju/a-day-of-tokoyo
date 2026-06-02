@@ -14,10 +14,23 @@ import LivingGuide from '@/components/LivingGuide';
 import { computeRecommendation } from '@/data/recommendation';
 
 /* ─────────── sessionStorage 中的 RAG 生成结果 ─────────── */
+
+/** RAG 生成的单个活动（来自 /api/generate-day），含 sourceChunkIds 字段 */
+interface RAGActivity {
+  time: string;
+  title: string;
+  description: string;
+  source: string;
+  modern: string;
+  originalText?: string;
+  chapter?: string;
+  sourceChunkIds?: string[];
+}
+
 interface StoredRAGData {
   role: string;
   title: string;
-  activities: ActivityData[];
+  activities: RAGActivity[];
   sources: Array<{
     activityIndex: number;
     time: string;
