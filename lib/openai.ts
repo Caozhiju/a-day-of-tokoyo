@@ -16,8 +16,21 @@ let _client: OpenAI | null = null;
 
 function getClient(): OpenAI {
   if (!_client) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      const envKeys = Object.keys(process.env).filter((k) =>
+        k.includes('OPENAI') || k.includes('API'),
+      );
+      console.error('[openai] OPENAI_API_KEY 未配置。当前相关 env:', envKeys);
+      throw new Error(
+        'OPENAI_API_KEY 未配置。请在 Vercel Project Settings → Environment Variables 中添加 OPENAI_API_KEY（作用于 Production / Preview / Development），并重新部署。',
+      );
+    }
+    console.log(
+      `[openai] 初始化客户端，baseURL=${process.env.OPENAI_BASE_URL || '(default OpenAI)'}`,
+    );
     _client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey,
       baseURL: process.env.OPENAI_BASE_URL || undefined,
     });
   }
