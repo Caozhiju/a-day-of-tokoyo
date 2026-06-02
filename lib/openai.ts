@@ -6,10 +6,30 @@ import OpenAI from 'openai';
  * - 从环境变量 OPENAI_API_KEY 读取 API 密钥
  * - 从环境变量 OPENAI_BASE_URL 读取 API 地址（默认为 OpenAI 官方）
  * - 仅在服务端使用，不会暴露给前端
+ *
+ * 注意：使用 Proxy 延迟实例化，避免在 Vercel 构建阶段（"Collecting page data"）
+ * 触发 OpenAI SDK 6.x 的 API key 强制校验而构建失败。
+ * 真正调用 API 时才读取环境变量。
  */
-export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || undefined,
+
+let _client: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (!_client) {
+    _client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || undefined,
+    });
+  }
+  return _client;
+}
+
+export const openai = new Proxy({} as OpenAI, {
+  get(_target, prop, receiver) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
 });
 
 /**
