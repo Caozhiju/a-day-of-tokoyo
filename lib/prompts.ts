@@ -94,7 +94,7 @@ export function buildRAGContext(chunks: RetrievedChunkFull[]): string {
   }
 
   return chunks
-    .map((c, i) => {
+    .map((c) => {
       const tags = Object.entries(c.knowledge)
         .filter(([, v]) => Array.isArray(v) && v.length > 0)
         .map(([k, v]) => `${k}: ${(v as string[]).join('、')}`)
