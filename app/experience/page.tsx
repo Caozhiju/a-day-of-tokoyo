@@ -22,6 +22,11 @@ function getActivitiesForRole(role: string): TimelineActivity[] {
       time: act.time,
       title: act.title,
       description: act.description,
+      source: act.source,
+      modern: act.modern,
+      originalText: act.originalText,
+      chapter: act.chapter,
+      evidence: act.evidence,
     }));
   }
   return [];
@@ -284,11 +289,19 @@ function ExperiencePage() {
                 <h2 className="text-base sm:text-lg md:text-xl font-chinese text-gold-accent font-bold">
                   {generatedTitle}
                 </h2>
-              ) : role === '北宋书生' ? (
+              ) : (
                 <h2 className="text-base sm:text-lg md:text-xl font-chinese text-gold-accent font-bold">
-                  一位书生的东京一日
+                  {
+                    ({
+                      '北宋书生': '一位书生的东京一日',
+                      '茶坊老板': '一位茶坊老板的东京一日',
+                      '酒楼伙计': '一位酒楼伙计的东京一日',
+                      '夜市商贩': '一位夜市商贩的东京一日',
+                      '外地游客': '一位外地游客的东京一日',
+                    } as Record<string, string>)[role] ?? ''
+                  }
                 </h2>
-              ) : null}
+              )}
 
               {/* RAG 溯源徽章：仅在 AI 生成后显示 */}
               {generatedTitle && ragMeta && (
