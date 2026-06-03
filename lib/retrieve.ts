@@ -28,39 +28,54 @@ export interface RetrievedChunk {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   角色 → 角色关键词映射
-   - 用于混合检索时计算 character 字段的命中权重
-   - 角色关键词出现在 chunk.knowledge.character 中即视为命中
-   - 未知角色返回空数组，自动降级为纯向量检索
+   角色匹配规则
+   每项定义：
+   - keywords: 要匹配的关键词列表
+   - fields:   在 knowledge 的哪些字段中搜索
+   （实际数据中 character 以历史人名为主，social role 标签偏少，
+     因此联合 activity / commerce / place / food 一起检索）
+   - 未知角色自动降级为纯向量检索
    ═══════════════════════════════════════════════════════════ */
-const ROLE_CHARACTER_KEYWORDS: Record<string, string[]> = {
-  '北宋书生': ['书生', '士人', '学子', '文士', '读书人', '儒生', '秀才'],
-  '茶坊老板': ['茶坊', '茶肆', '茶馆', '茶商', '茶博士', '点茶', '茶客'],
-  '酒楼伙计': ['酒楼', '酒肆', '酒保', '量酒博士', '厨子', '酒客', '小二', '茶饭'],
-  '夜市商贩': ['商贩', '夜市', '小贩', '摊贩', '货郎', '铺户', '行商', '叫卖'],
-  '外地游客': ['游客', '行人', '过客', '旅人', '外客', '远方客', '商旅'],
+interface RoleMatchRule {
+  keywords: string[];
+  fields: (keyof Knowledge)[];
+}
+
+const ROLE_MATCH_RULES: Record<string, RoleMatchRule> = {
+  '北宋书生': { keywords: ['士', '学', '书'], fields: ['character', 'activity'] },
+  '茶坊老板': { keywords: ['茶'], fields: ['character', 'commerce', 'activity', 'food', 'place'] },
+  '酒楼伙计': { keywords: ['酒', '食', '厨'], fields: ['character', 'commerce', 'activity', 'food', 'place'] },
+  '夜市商贩': { keywords: ['商', '市', '贩', '卖', '夜', '铺'], fields: ['character', 'commerce', 'activity'] },
+  '外地游客': { keywords: ['客', '游'], fields: ['character', 'commerce', 'activity', 'place'] },
 };
 
-function getRoleKeywords(role: string): string[] {
-  return ROLE_CHARACTER_KEYWORDS[role] ?? [];
+function getRoleRule(role: string): RoleMatchRule | null {
+  return ROLE_MATCH_RULES[role] ?? null;
 }
 
 /* ═══════════════════════════════════════════════════════════
    角色匹配评分 —— 0~1
-   命中率 = 命中关键词数 / 角色关键词总数（封顶 1）
+   对每个 keyword，在规则的 fields 中遍历，任一个 tags 命中即算该 keyword 命中
+   命中率 = 命中关键词数 / 关键词总数（封顶 1）
    ═══════════════════════════════════════════════════════════ */
 function characterMatchScore(
-  chunkChars: string[],
-  roleKeywords: string[],
+  knowledge: Knowledge,
+  rule: RoleMatchRule | null,
 ): number {
-  if (roleKeywords.length === 0 || chunkChars.length === 0) return 0;
+  if (!rule || !rule.keywords.length) return 0;
   let matches = 0;
-  for (const kw of roleKeywords) {
-    if (chunkChars.some((c) => c.includes(kw) || kw.includes(c))) {
-      matches++;
+  for (const kw of rule.keywords) {
+    let kwHit = false;
+    for (const field of rule.fields) {
+      const tags = knowledge[field];
+      if (Array.isArray(tags) && tags.some((t) => t.includes(kw))) {
+        kwHit = true;
+        break;
+      }
     }
+    if (kwHit) matches++;
   }
-  return Math.min(1, matches / roleKeywords.length);
+  return Math.min(1, matches / rule.keywords.length);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -211,7 +226,7 @@ async function hybridRetrieve(
   topK: number,
 ): Promise<HybridScored[]> {
   const { ids, vectors, knowledge } = await loadCache();
-  const roleKeywords = getRoleKeywords(input.role);
+  const roleRule = getRoleRule(input.role);
 
   const queryText = [
     `身份：${input.role}`,
@@ -227,7 +242,7 @@ async function hybridRetrieve(
     const id = ids[i];
     const vectorScore = cosineSimilarity(queryArr, vec);
     const kn = knowledge.get(id) ?? DEFAULT_KNOWLEDGE;
-    const charScore = characterMatchScore(kn.character, roleKeywords);
+    const charScore = characterMatchScore(kn, roleRule);
     const hybridScore = vectorScore * VECTOR_WEIGHT + charScore * CHARACTER_WEIGHT;
     return { id, vectorScore, charScore, hybridScore, knowledge: kn };
   });

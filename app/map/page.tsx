@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { LOCATIONS, CATEGORY_STYLE, type LocationData } from '@/data/locations';
-import { studentActivities } from '@/data/activities';
+import { getActivitiesByRole } from '@/data/activities';
 import { generateRoute, buildRoutePath, type RoutePoint } from '@/data/route-generator';
 
 /* ── 加载占位 ── */
@@ -43,14 +43,32 @@ function MapPage() {
     if (roleParam) setRole(decodeURIComponent(roleParam));
   }, [searchParams]);
 
-  // 生成本日路线
+  // 生成本日路线：RAG 数据优先，无则用对应身份静态活动
   useEffect(() => {
-    const activities = studentActivities;
+    if (!mounted) return;
+
+    let activities: { time: string; title: string; description: string }[];
+    try {
+      const raw = sessionStorage.getItem(`menghua:${role}`);
+      if (raw) {
+        const ragData = JSON.parse(raw);
+        if (ragData.activities?.length > 0) {
+          activities = ragData.activities;
+        } else {
+          activities = getActivitiesByRole(role);
+        }
+      } else {
+        activities = getActivitiesByRole(role);
+      }
+    } catch {
+      activities = getActivitiesByRole(role);
+    }
+
     const route = generateRoute(activities);
     const path = buildRoutePath(route.points);
     setRoutePoints(route.points);
     setRoutePath(path);
-  }, []);
+  }, [mounted, role]);
 
   // 路径绘制完成后标记
   useEffect(() => {
