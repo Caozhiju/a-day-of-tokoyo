@@ -8,13 +8,23 @@ import Timeline from '@/components/Timeline';
 import type { TimelineActivity } from '@/components/Timeline';
 import GeneratingOverlay from '@/components/GeneratingOverlay';
 import { studentActivities } from '@/data/activities';
+import { experiences, type ActivityItem } from '@/data/experiences';
 
 /* ── 根据 role 返回对应的活动列表 ── */
 function getActivitiesForRole(role: string): TimelineActivity[] {
   const map: Record<string, TimelineActivity[]> = {
     '北宋书生': studentActivities,
   };
-  return map[role] ?? [];
+  if (role in map) return map[role];
+  const exp = experiences[role];
+  if (exp) {
+    return exp.activities.map((act: ActivityItem) => ({
+      time: act.time,
+      title: act.title,
+      description: act.description,
+    }));
+  }
+  return [];
 }
 
 // 东京梦华录出处占位内容 —— 每段引文均出自孟元老原著
