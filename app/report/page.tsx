@@ -7,10 +7,12 @@ import Link from 'next/link';
 import { getActivitiesByRole, type ActivityData } from '@/data/activities';
 import { matchGenesFromActivities } from '@/data/culture-genes';
 import { computeHeritageIndex } from '@/data/heritage-index';
+import { matchChainsFromActivities } from '@/data/civilization-chains';
 import CultureGeneCard from '@/components/CultureGeneCard';
 import HeritageIndex from '@/components/HeritageIndex';
 import CivilizationSummary from '@/components/CivilizationSummary';
 import LivingGuide from '@/components/LivingGuide';
+import CivilizationChainCard from '@/components/CivilizationChainCard';
 import { computeRecommendation } from '@/data/recommendation';
 
 /* ─────────── sessionStorage 中的 RAG 生成结果 ─────────── */
@@ -177,6 +179,28 @@ function ReportPage() {
   const geneResults = useMemo(() => matchGenesFromActivities(activities), [activities]);
   const heritageReport = useMemo(() => computeHeritageIndex(activities), [activities]);
   const livingRecommendation = useMemo(() => computeRecommendation(activities), [activities]);
+  const chainResults = useMemo(() => matchChainsFromActivities(activities), [activities]);
+
+  const valueBoard = useMemo(() => {
+    const originalTextCount = activities.filter((a) => a.originalText && a.originalText.length > 0).length;
+    const uniqueChapters = new Set(activities.map((a) => a.chapter).filter(Boolean));
+    const allLocations = new Set<string>();
+    activities.forEach((a) => {
+      extractLocations(a.description).forEach((l) => allLocations.add(l));
+      extractLocations(a.title).forEach((l) => allLocations.add(l));
+    });
+    const modernIndustries = geneResults.map((g) => g.gene.domain);
+    const uniqueIndustries = Array.from(new Set(modernIndustries));
+    return {
+      originalTextCount,
+      chapterCount: uniqueChapters.size,
+      locationCount: allLocations.size,
+      industryCount: uniqueIndustries.length,
+      industryList: uniqueIndustries,
+      chainCount: chainResults.length,
+      spanLabel: '约 1000 年',
+    };
+  }, [activities, geneResults, chainResults]);
 
   if (!mounted || !role) {
     return (
@@ -304,11 +328,51 @@ function ReportPage() {
       </div>
 
       {/* ═══════════════════════════════════════
-          行2：完整活动一览
+           行2：体验价值看板
+      ════════════════════════════════════════ */}
+      <div
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4"
+        style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 0.7s both' : 'none' }}
+      >
+        {[
+          { label: '命中原文', value: valueBoard.originalTextCount, unit: '处', icon: '📜', desc: '《东京梦华录》原文引用' },
+          { label: '引用章节', value: valueBoard.chapterCount, unit: '章', icon: '📖', desc: '知识库章节覆盖' },
+          { label: '涉及地点', value: valueBoard.locationCount, unit: '处', icon: '📍', desc: '东京城漫游足迹' },
+          { label: '现代行业', value: valueBoard.industryCount, unit: '类', icon: '🏭', desc: valueBoard.industryList.join(' · ') },
+          { label: '传承链', value: valueBoard.chainCount, unit: '条', icon: '⛓️', desc: '文明演变脉络' },
+          { label: '传承跨度', value: valueBoard.spanLabel, unit: '', icon: '⏳', desc: '宋代至今' },
+        ].map((card, i) => (
+          <div
+            key={i}
+            className="card-premium p-4 sm:p-5 relative overflow-hidden group"
+            style={{ animation: `stat-appear 0.5s ease-out ${0.7 + i * 0.06}s both` }}
+          >
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg sm:text-xl">{card.icon}</span>
+                <span className="text-xs font-chinese font-bold text-secondary tracking-wider">{card.label}</span>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-3xl sm:text-4xl font-black text-scroll-dark leading-none">
+                  {card.value}
+                </span>
+                {card.unit && (
+                  <span className="text-sm font-chinese font-bold text-ink-light/60">{card.unit}</span>
+                )}
+              </div>
+              <p className="text-[11px] font-chinese text-ink-light/50 leading-tight mt-1.5 line-clamp-1">{card.desc}</p>
+            </div>
+            <span className="absolute top-0 right-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-gold-accent/15" />
+          </div>
+        ))}
+      </div>
+
+      {/* ═══════════════════════════════════════
+           行3：完整活动一览
       ════════════════════════════════════════ */}
       <div
         className="card-premium overflow-hidden"
-        style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 0.7s both' : 'none' }}
+        style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.0s both' : 'none' }}
       >
         <div className="px-6 sm:px-8 py-5 border-b border-border-warm flex items-center gap-3">
           <span className="w-2 h-2 bg-gold-accent rounded-full" />
@@ -348,12 +412,12 @@ function ReportPage() {
       </div>
 
       {/* ═══════════════════════════════════════
-          行3：东京足迹
+           行4：东京足迹
       ════════════════════════════════════════ */}
       {data.locations.length > 0 && (
         <div
           className="card-premium overflow-hidden"
-          style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 0.9s both' : 'none' }}
+          style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.2s both' : 'none' }}
         >
           <div className="px-6 sm:px-8 py-5 border-b border-border-warm flex items-center gap-3">
             <span className="w-2 h-2 bg-gold-accent rounded-full" />
@@ -390,24 +454,24 @@ function ReportPage() {
       )}
 
       {/* ═══════════════════════════════════════
-          行4：如果你生活在东京城
+           行5：如果你生活在东京城
       ════════════════════════════════════════ */}
-      <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.1s both' : 'none' }}>
+      <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.4s both' : 'none' }}>
         <LivingGuide recommendation={livingRecommendation} mounted={mounted} />
       </div>
 
       {/* ═══════════════════════════════════════
-          行5：文明传承指数
+           行6：文明传承指数
       ════════════════════════════════════════ */}
-      <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.3s both' : 'none' }}>
+      <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.6s both' : 'none' }}>
         <HeritageIndex report={heritageReport} mounted={mounted} />
       </div>
 
       {/* ═══════════════════════════════════════
-          行6：宋代基因分析
+           行7：宋代基因分析
       ════════════════════════════════════════ */}
       {geneResults.length > 0 && (
-        <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.5s both' : 'none' }}>
+        <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.8s both' : 'none' }}>
           <div className="flex items-center gap-4 mb-6">
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border-warm to-transparent" />
             <div className="flex items-center gap-3 px-2">
@@ -446,9 +510,50 @@ function ReportPage() {
       )}
 
       {/* ═══════════════════════════════════════
-          行7：文明传承总结
+           行8：文明传承链
+       ════════════════════════════════════════ */}
+      {chainResults.length > 0 && (
+        <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.9s both' : 'none' }}>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border-warm to-transparent" />
+            <div className="flex items-center gap-3 px-2">
+              <span className="w-2.5 h-2.5 bg-gold-accent rounded-full" />
+              <span className="title-section">文明传承链</span>
+              <span className="text-base sm:text-lg font-chinese text-ink-light/40 tracking-wider">· 千年演变</span>
+            </div>
+            <div className="h-px flex-1 bg-gradient-to-l from-transparent via-border-warm to-transparent" />
+          </div>
+
+          <div className="text-center mb-7">
+            <p className="text-body italic max-w-2xl mx-auto">
+              宋代生活方式并非停留在《东京梦华录》的书页里——它们在接下来的千年中不断演变，一直延续到今天。
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+            {chainResults.map((result, i) => (
+              <CivilizationChainCard
+                key={result.chain.id}
+                chain={result.chain}
+                matchedActivities={result.matchedActivities}
+                matchScore={result.score}
+                delay={i * 0.08}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 mt-6 pt-4">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gold-accent/20 to-transparent" />
+            <span className="text-xs font-chinese text-ink-light/30 tracking-widest select-none">传·承·链</span>
+            <div className="h-px flex-1 bg-gradient-to-l from-transparent via-gold-accent/20 to-transparent" />
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+           行9：文明传承总结
       ════════════════════════════════════════ */}
-      <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 1.7s both' : 'none' }}>
+      <div style={{ animation: mounted ? 'fade-slide-up 0.6s ease-out 2.0s both' : 'none' }}>
         <CivilizationSummary activities={activities} mounted={mounted} />
       </div>
     </div>

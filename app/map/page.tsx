@@ -68,6 +68,11 @@ function MapPage() {
     const path = buildRoutePath(route.points);
     setRoutePoints(route.points);
     setRoutePath(path);
+
+    /* ──── 调试日志【6】：地图页读取的活动 ──── */
+    console.log(
+      `[debug-6] role=${role} activities.length=${activities.length} routePoints.length=${route.points.length}`,
+    );
   }, [mounted, role]);
 
   // 路径绘制完成后标记

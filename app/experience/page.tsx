@@ -96,6 +96,9 @@ interface GenerateDayResponse {
     retrievalSuccess: number;
     retrievalTotal: number;
     uniqueChunks: number;
+    retrievedChunkCount: number;
+    citedChunkCount: number;
+    coverageRate: number;
   };
 }
 
@@ -160,6 +163,13 @@ function ExperiencePage() {
       }
 
       const data: GenerateDayResponse = await res.json();
+
+      /* ──── 调试日志【5】：前端接收 API 返回 ──── */
+      console.log(
+        `[debug-5] role=${role} activities.length=${data.activities?.length} sources.length=${data.sources?.length}`,
+      );
+      console.log('[debug-5] meta=', data.meta);
+
       setGeneratedActivities(data.activities);
       setGeneratedTitle(data.title);
       setRagMeta(data.meta ?? null);

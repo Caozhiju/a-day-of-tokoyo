@@ -47,6 +47,9 @@ export interface GenerateDayResponse {
     retrievalSuccess: number;
     retrievalTotal: number;
     uniqueChunks: number;
+    retrievedChunkCount: number;
+    citedChunkCount: number;
+    coverageRate: number;
   };
 }
 
@@ -71,14 +74,25 @@ export async function POST(request: NextRequest) {
       `[generate-day] RAG 开始：role=${body.role}, location=${body.location}, topK=${topKPerSlot}/slot`,
     );
 
-    const retrievalResults = await Promise.allSettled(
-      SHICHEN_LIST.map((time) =>
+    const retrievalResults = await (async () => {
+      const batch1 = SHICHEN_LIST.slice(0, 4).map((time) =>
         retrieveForRAG(
           { role: body.role, location: body.location, time },
           topKPerSlot,
         ).then((chunks) => ({ time, chunks })),
-      ),
-    );
+      );
+      const results1 = await Promise.allSettled(batch1);
+
+      const batch2 = SHICHEN_LIST.slice(4).map((time) =>
+        retrieveForRAG(
+          { role: body.role, location: body.location, time },
+          topKPerSlot,
+        ).then((chunks) => ({ time, chunks })),
+      );
+      const results2 = await Promise.allSettled(batch2);
+
+      return results1.concat(results2);
+    })();
 
     /* ════════════════════════════════════════════════════════════
        Step 2: 合并去重 —— 同一片段被多个时辰命中时保留最高分
@@ -110,10 +124,23 @@ export async function POST(request: NextRequest) {
       `[generate-day] RAG 检索完成：成功 ${retrievalSuccess}/${SHICHEN_LIST.length} 个时辰，去重后 ${allChunks.length} 个片段`,
     );
 
+    /* ──── 调试日志【1】：retrieve 结果详情 ──── */
+    console.log(
+      `[debug-1] role=${body.role}, retrievedChunks.length=${allChunks.length}`,
+    );
+    allChunks.slice(0, 5).forEach((c, i) => {
+      console.log(
+        `[debug-1]   chunk[${i}] id=${c.id} score=${c.score.toFixed(4)}`,
+      );
+    });
+
     /* ════════════════════════════════════════════════════════════
        Step 3: 构建 context 文本
        ════════════════════════════════════════════════════════════ */
     const context = buildRAGContext(allChunks);
+
+    /* ──── 调试日志【2】：context 长度 ──── */
+    console.log(`[debug-2] context.length=${context.length}`);
 
     /* ════════════════════════════════════════════════════════════
        Step 4: 调用 LLM，context 注入 user prompt
@@ -124,6 +151,11 @@ export async function POST(request: NextRequest) {
       dynasty: body.dynasty,
       context,
     });
+
+    /* ──── 调试日志【3】：调用 OpenAI 前最终 prompt 长度 ──── */
+    console.log(
+      `[debug-3] finalPrompt.length=${userPrompt.length}, systemPrompt.length=${GENERATE_DAY_SYSTEM.length}`,
+    );
 
     const completion = await openai.chat.completions.create({
       model: MODELS.BALANCED,
@@ -192,6 +224,14 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    /* ──── 调试日志【4】：OpenAI 返回后的 activities ──── */
+    console.log(`[debug-4] activities.length=${activities.length}`);
+    activities.forEach((a) => {
+      console.log(
+        `[debug-4]   title=${a.title} sourceChunkIds.length=${(a.sourceChunkIds || []).length}`,
+      );
+    });
+
     /* ════════════════════════════════════════════════════════════
        Step 6: 构建 sources（活动→片段映射表）
        ════════════════════════════════════════════════════════════ */
@@ -223,6 +263,19 @@ export async function POST(request: NextRequest) {
       knowledge: c.knowledge,
     }));
 
+    /* ──── 覆盖率统计 ──── */
+    const citedChunkIds = new Set(sources.map((s) => s.chunkId));
+    const retrievedChunkCount = allChunks.length;
+    const citedChunkCount = citedChunkIds.size;
+    const coverageRate =
+      retrievedChunkCount > 0
+        ? Math.round((citedChunkCount / retrievedChunkCount) * 10000) / 100
+        : 0;
+
+    console.log(
+      `[RAG Coverage] role=${body.role} Retrieved=${retrievedChunkCount} Cited=${citedChunkCount} Coverage=${coverageRate}%`,
+    );
+
     /* ════════════════════════════════════════════════════════════
        Step 8: 返回完整 RAG 结果
        ════════════════════════════════════════════════════════════ */
@@ -236,6 +289,9 @@ export async function POST(request: NextRequest) {
         retrievalSuccess,
         retrievalTotal: SHICHEN_LIST.length,
         uniqueChunks: allChunks.length,
+        retrievedChunkCount,
+        citedChunkCount,
+        coverageRate,
       },
     };
 

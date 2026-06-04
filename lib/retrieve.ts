@@ -92,6 +92,48 @@ const DEFAULT_KNOWLEDGE: Knowledge = {
   food: [], festival: [], commerce: [],
 };
 
+/* ─────────── 时辰关键词映射 ─────────── */
+
+const TIME_CONTEXT_MAP: Record<string, string[]> = {
+  '卯时': ['清晨', '开市', '读书'],
+  '辰时': ['市集', '买卖', '汴河'],
+  '巳时': ['茶坊', '交游'],
+  '午时': ['酒楼', '饮食'],
+  '未时': ['商业', '手工业'],
+  '申时': ['瓦舍', '勾栏'],
+  '酉时': ['夜市', '灯火'],
+  '戌时': ['夜生活', '娱乐'],
+};
+
+function getTimeContext(time: string): string {
+  const keywords = TIME_CONTEXT_MAP[time];
+  return keywords ? keywords.join('、') : '';
+}
+
+/* ─────────── 角色地点映射 ─────────── */
+
+const LOCATION_CATEGORIES: Record<string, string[]> = {
+  '核心地点': ['御街', '宣德楼', '朱雀门', '龙津桥', '州桥'],
+  '商业地点': ['潘楼街', '州桥', '土市子', '界身', '彩楼'],
+  '娱乐场所': ['瓦舍', '勾栏', '宝津楼', '彩楼欢门'],
+  '宗教场所': ['相国寺', '太学', '醴泉观', '景灵宫'],
+};
+
+const ROLE_LOCATION_CATEGORIES: Record<string, string[]> = {
+  '北宋书生': ['核心地点', '商业地点', '娱乐场所', '宗教场所'],
+  '茶坊老板': ['核心地点', '商业地点'],
+  '酒楼伙计': ['核心地点', '商业地点', '娱乐场所'],
+  '夜市商贩': ['商业地点', '娱乐场所'],
+  '外地游客': ['核心地点', '商业地点', '娱乐场所', '宗教场所'],
+};
+
+function getRoleLocationContext(role: string): string {
+  const cats = ROLE_LOCATION_CATEGORIES[role];
+  if (!cats) return '';
+  const keywords = [...new Set(cats.flatMap((cat) => LOCATION_CATEGORIES[cat] || []))];
+  return keywords.join('、');
+}
+
 /* ─────────── 余弦相似度 ─────────── */
 
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {
@@ -183,27 +225,42 @@ async function embedQuery(text: string): Promise<number[]> {
 
   if (!apiKey) throw new Error('OPENAI_API_KEY 未配置');
 
-  const resp = await fetch(`${baseURL}/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({
-      input: [text],
-      model: 'nvidia/nv-embedqa-e5-v5',
-      input_type: 'query',
-    }),
-  });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const resp = await fetch(`${baseURL}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          input: [text],
+          model: 'nvidia/nv-embedqa-e5-v5',
+          input_type: 'query',
+        }),
+      });
 
-  if (!resp.ok) {
-    const errBody = await resp.text().catch(() => '');
-    throw new Error(`Embedding API 错误 (${resp.status}): ${errBody.slice(0, 100)}`);
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => '');
+        throw new Error(`Embedding API 错误 (${resp.status}): ${errBody.slice(0, 100)}`);
+      }
+
+      const data = await resp.json();
+      return data.data[0].embedding;
+    } catch (err) {
+      if (attempt === 1) {
+        console.log(
+          `[Embedding Retry] query=${text.slice(0, 60)}... attempt=2`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } else {
+        throw err;
+      }
+    }
   }
 
-  const data = await resp.json();
-  return data.data[0].embedding;
+  throw new Error('Embedding 请求失败（重试后）');
 }
 
 /* ─────────── 共享：混合检索内部实现 ─────────── */
@@ -232,6 +289,8 @@ async function hybridRetrieve(
     `身份：${input.role}`,
     `地点：${input.location}`,
     `时间：${input.time}`,
+    `去处：${getRoleLocationContext(input.role)}`,
+    `情境：${getTimeContext(input.time)}`,
     `在北宋东京城中，${input.role}在${input.time}来到${input.location}。`,
   ].join('。');
 
@@ -248,7 +307,28 @@ async function hybridRetrieve(
   });
 
   scored.sort((a, b) => b.hybridScore - a.hybridScore);
-  return scored.slice(0, topK);
+
+  /* ─────────── 章节多样性约束 ───────────
+     按 hybrid 分排序后，优先覆盖更多章节：
+     - 同一 place（首个地点标签）最多保留 2 个 chunk
+     - 不足 topK 时再补高分 chunk
+     提高引用来源丰富度，减少重复引用同一章节
+     ─────────── */
+  const MAX_PER_CHAPTER = 2;
+  const chapterCount = new Map<string, number>();
+  const diversified: HybridScored[] = [];
+
+  for (const item of scored) {
+    const chapter = item.knowledge.place[0] || '__unknown__';
+    const count = chapterCount.get(chapter) ?? 0;
+    if (count < MAX_PER_CHAPTER) {
+      diversified.push(item);
+      chapterCount.set(chapter, count + 1);
+    }
+    if (diversified.length >= topK) break;
+  }
+
+  return diversified;
 }
 
 /* ─────────── 主函数：retrieve（/api/retrieve 入口） ─────────── */
